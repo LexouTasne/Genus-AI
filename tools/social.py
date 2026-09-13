@@ -14,7 +14,7 @@ class SocialTools:
         req = urllib.request.Request(webhook_url, data=data, headers={"Content-Type": "application/json", "User-Agent": "Genus-AI"})
         
         try:
-            with urllib.request.urlopen(req) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:
                 return "Mensagem enviada para o Discord."
         except Exception as e:
             return f"Erro ao enviar mensagem para o Discord: {e}"
@@ -30,7 +30,7 @@ class SocialTools:
             async def send():
                 client = discord.Client(intents=discord.Intents.default())
                 await client.login(token)
-                channel = await client.fetch_channel(int_channel_id)
+                channel = await client.fetch_channel(int(channel_id))
                 await channel.send(message)
                 await client.close()
             

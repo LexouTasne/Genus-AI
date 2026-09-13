@@ -1,7 +1,12 @@
-#!/bin/bash
-# Auto-generated wrapper for Genus AI
-cd "/home/lex/Genus"
-export DISPLAY=":0"
-export WAYLAND_DISPLAY="wayland-0"
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-exec /usr/bin/python "/home/lex/Genus/genus.py" >> "/home/lex/Genus/genus_startup.log" 2>&1
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+exec python3 genus.py "$@"

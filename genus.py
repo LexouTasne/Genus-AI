@@ -55,20 +55,21 @@ import pygame
 from brain.core import GenusCore
 
 def _start_local_api():
-    """Inicia a API Flask local do Genus em uma thread separada com verificação de porta."""
+    """Inicia a API local sem encerrar processos de terceiros."""
     api_path = os.path.join(os.path.dirname(__file__), "ai_engine/my_api/api.py")
     if os.path.exists(api_path):
         def run_api():
             try:
-                # Mata processo anterior na porta 7532 se existir
-                subprocess.run(["fuser", "-k", "7532/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(0.5)
                 subprocess.Popen([sys.executable, api_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except:
                 pass
         threading.Thread(target=run_api, daemon=True).start()
 
 def main():
+    if not os.getenv("OPENROUTER_API_KEY"):
+        print("Aviso: OPENROUTER_API_KEY não configurada. Consulte .env.example.")
+    if not os.getenv("GENUS_LOCAL_API_TOKEN"):
+        print("Aviso: GENUS_LOCAL_API_TOKEN não configurado; a API local recusará /chat.")
     # Inicia a API local no fundo
     _start_local_api()
     

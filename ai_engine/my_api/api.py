@@ -1,111 +1,61 @@
-from flask import Flask, request, jsonify
+"""API local autenticada para o núcleo Genus."""
+import hmac
+import logging
 import os
-import json
-import requests
 import sys
 
-# Adiciona o diretório base ao sys.path para importar configurações
+import requests
+from flask import Flask, jsonify, request
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from config.settings import API_KEY, FREE_MODELS
-
-import logging
-import random
-from brain.rag import rag
-
-# Configuração de Logs da API
-LOG_API_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "api_debug.log")
-logging.basicConfig(filename=LOG_API_FILE, level=logging.INFO, format='%(asctime)s - %(message)s')
+from config.settings import API_KEY, FREE_MODELS, LOCAL_API_HOST, LOCAL_API_PORT, LOCAL_API_TOKEN
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-@app.route('/health', methods=['GET'])
+
+@app.before_request
+def require_local_token():
+    if request.path == "/health":
+        return None
+    provided = request.headers.get("Authorization", "").removeprefix("Bearer ")
+    if not LOCAL_API_TOKEN or not hmac.compare_digest(provided, LOCAL_API_TOKEN):
+        return jsonify({"error": "unauthorized"}), 401
+    return None
+
+
+@app.get("/health")
 def health():
-    return jsonify({"status": "ok", "message": "Genus API está online"}), 200
+    return jsonify({"status": "ok"})
 
-@app.route('/chat', methods=['POST'])
+
+@app.post("/chat")
 def chat():
-    data = request.json
-    if not data or 'messages' not in data:
-        logging.error("Requisição inválida: mensagens ausentes")
-        return jsonify({"error": "Mensagens não fornecidas"}), 400
-    
-    messages = data.get('messages')
-    user_query = ""
-    for m in reversed(messages):
-        if m['role'] == 'user':
-            user_query = m['content']
-            break
-
-    # Tenta usar os modelos configurados em ordem se um falhar
-    models_to_try = [data.get('model')] if data.get('model') else FREE_MODELS
-    max_tokens = data.get('max_tokens', 1000)
-    
-    # RAPID LOCAL CHECK: Removido para priorizar inteligência real
-    
-    last_error = ""
-    for model in models_to_try:
+    data = request.get_json(silent=True) or {}
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not messages or len(messages) > 30:
+        return jsonify({"error": "messages inválidas"}), 400
+    if not API_KEY:
+        return jsonify({"error": "OPENROUTER_API_KEY não configurada"}), 503
+    max_tokens = data.get("max_tokens", 1000)
+    if not isinstance(max_tokens, int) or not 1 <= max_tokens <= 2048:
+        return jsonify({"error": "max_tokens deve estar entre 1 e 2048"}), 400
+    models = [data["model"]] if isinstance(data.get("model"), str) else FREE_MODELS
+    for model in models:
         try:
-            logging.info(f"Tentando modelo: {model}")
             response = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {API_KEY}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://genus.ai", # Opcional para OpenRouter
-                    "X-Title": "Genus AI"
-                },
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "max_tokens": max_tokens
-                },
-                timeout=15 # Reduzido para fallback mais rápido
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", "X-Title": "Genus AI"},
+                json={"model": model, "messages": messages, "max_tokens": max_tokens}, timeout=30,
             )
-            if response.status_code == 200:
-                logging.info(f"Sucesso com modelo: {model}")
-                return jsonify(response.json()), 200
-            else:
-                last_error = f"Erro {response.status_code}: {response.text}"
-                logging.warning(f"Falha com {model}: {last_error}")
-        except Exception as e:
-            last_error = str(e)
-            logging.error(f"Exceção com {model}: {last_error}")
-            continue
+            if response.ok:
+                return jsonify(response.json())
+            logging.warning("Modelo %s falhou com HTTP %s", model, response.status_code)
+        except requests.RequestException as error:
+            logging.warning("Falha no provedor: %s", error)
+    return jsonify({"error": "provedor indisponível"}), 502
 
-    # FALLBACK: CÉREBRO LOCAL (Nível EDITH Local)
-    logging.info("Fallback para Cérebro Local Inteligente ativado.")
-    local_context = rag.ctx(user_query, n=1500)
-    
-    # Processamento de comandos básicos locais (Sem IA externa)
-    query_low = user_query.lower()
-    if any(k in query_low for k in ["abra", "abrir", "youtube", "roblox", "firefox"]):
-        # Tenta extrair o que abrir
-        target = "site ou aplicativo"
-        if "youtube" in query_low: target = "YouTube"
-        elif "roblox" in query_low: target = "Roblox"
-        elif "firefox" in query_low: target = "Firefox"
-        answer = f"[STYLE: sério] Minha conexão externa falhou, mas como sou uma IA autônoma, vou tentar executar o comando '{user_query}' via BASH local agora mesmo. [BASH: xdg-open https://www.{target.lower()}.com]"
-    elif "quem é você" in query_low or "quem e voce" in query_low:
-        answer = "Eu sou Genus, sua IA Autônoma Suprema. No momento estou operando com meu núcleo local (Protocolo EDITH) devido a falhas na rede externa."
-    elif local_context:
-        # Tenta resumir ou extrair a parte mais relevante em vez de apenas dar o dump
-        relevant_lines = [line for line in local_context.split("\n") if len(line.strip()) > 20][:3]
-        summary = " ".join(relevant_lines)
-        answer = f"Estou operando em modo local. Sobre o que você perguntou, lembro disso: {summary}. Como posso agir nos arquivos do projeto?"
-    else:
-        answer = "Minha conexão com os modelos externos falhou e não encontrei contexto local suficiente. Posso realizar tarefas de sistema ou leitura de arquivos por conta própria."
 
-    return jsonify({
-        "choices": [{
-            "message": {
-                "role": "assistant",
-                "content": answer
-            }
-        }],
-        "model": "genus-local-brain",
-        "usage": {"total_tokens": 0}
-    }), 200
-
-if __name__ == '__main__':
-    # Porta padrão do Genus
-    app.run(host='0.0.0.0', port=7532, debug=False)
+if __name__ == "__main__":
+    app.run(host=LOCAL_API_HOST, port=LOCAL_API_PORT, debug=False)

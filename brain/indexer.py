@@ -1,11 +1,12 @@
 import os
 import time
 from brain.rag import rag
+from config.settings import BASE_DIR
 
 class ProjectIndexer:
-    def __init__(self, root_dir="/home/lex/Genus"):
+    def __init__(self, root_dir=BASE_DIR):
         self.root_dir = root_dir
-        self.ignored_dirs = [".git", "__pycache__", "memory", "tts_cache", "node_modules"]
+        self.ignored_dirs = [".git", ".venv", "__pycache__", "memory", "tts_cache", "node_modules"]
         self.allowed_extensions = [".py", ".sh", ".txt", ".json", ".js", ".md"]
 
     def index_full_project(self):
@@ -16,6 +17,8 @@ class ProjectIndexer:
             dirs[:] = [d for d in dirs if d not in self.ignored_dirs]
             
             for file in files:
+                if file.startswith(".") or file in {"apis.txt", ".env"}:
+                    continue
                 if any(file.endswith(ext) for ext in self.allowed_extensions):
                     path = os.path.join(root, file)
                     try:

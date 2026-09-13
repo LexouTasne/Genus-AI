@@ -1,1 +1,9 @@
-apis.txt
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+memory/
+ai_engine/workspace/
+api_debug.log
+genus_startup.log

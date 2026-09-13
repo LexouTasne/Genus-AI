@@ -1,13 +1,13 @@
 import os
-import subprocess
 import time
 import requests
 import threading
+from config.settings import LOCAL_API_PORT
 
 class GenusMonitor:
     def __init__(self, core):
         self.core = core
-        self.api_url = "http://localhost:7532/health"
+        self.api_url = f"http://127.0.0.1:{LOCAL_API_PORT}/health"
         self.api_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ai_engine/my_api/api.py")
         self.running = True
         threading.Thread(target=self._watchdog, daemon=True).start()
@@ -24,20 +24,11 @@ class GenusMonitor:
                     if resp.status_code == 200:
                         api_ok = True
                     else:
-                        self._fix_api("Status inválido")
+                        self.core.log("API local respondeu com status inválido")
                 except:
-                    self._fix_api("API offline")
+                    self.core.log("API local está offline; inicie-a manualmente se precisar dela.")
 
-                # 2. Proatividade Global (EDITH Protocol)
-                if api_ok:
-                    idle_count += 1
-                    # A cada 5 minutos de idle, realiza uma varredura de melhoria
-                    if idle_count >= 10: 
-                        print("[Monitor] Protocolo EDITH: Iniciando varredura de otimização em background...")
-                        self.core.process_input("Realize uma varredura de otimização no seu próprio código e sugira melhorias.")
-                        idle_count = 0
-
-                # 3. Checa integridade
+                # Nunca dispara tarefas do modelo sem uma solicitação explícita.
                 self._check_integrity()
 
             except Exception as e:
@@ -50,9 +41,7 @@ class GenusMonitor:
         self.core.log("Iniciando reparo total do sistema...")
         repairs = []
         
-        # 1. Repara API
-        self._fix_api("Reparo manual solicitado")
-        repairs.append("API Reiniciada")
+        repairs.append("API: verificação concluída (reinício manual requerido)")
         
         # 2. Re-indexa projeto
         from brain.indexer import indexer
@@ -68,20 +57,6 @@ class GenusMonitor:
         except: pass
         
         return " | ".join(repairs)
-
-    def _fix_api(self, reason):
-        print(f"[Monitor] Reparando API local ({reason})...")
-        try:
-            # Mata processos antigos na porta 7532
-            subprocess.run("fuser -k 7532/tcp", shell=True, stderr=subprocess.DEVNULL)
-            # Inicia a API novamente
-            subprocess.Popen([os.sys.executable, self.api_path], 
-                           stdout=subprocess.DEVNULL, 
-                           stderr=subprocess.DEVNULL)
-            time.sleep(2)
-            print("[Monitor] API reiniciada com sucesso.")
-        except Exception as e:
-            print(f"[Monitor] Falha ao reparar API: {e}")
 
     def _check_integrity(self):
         """Verifica se arquivos base existem, se não, tenta restaurar ou alertar."""
